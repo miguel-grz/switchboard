@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-bg: #f4f4f1;
+  --color-surface: #ffffff;
+  --color-sunken: #ecece8;
+  --color-line: #e3e2dd;
+  --color-line-strong: #cfcec8;
+  --color-ink: #1b1e22;
+  --color-ink-2: #4a5057;
+  --color-mute: #6d737a;
+  --color-faint: #9aa0a6;
+
+  --color-cobalt: #2851be;
+  --color-cobalt-dark: #1e3f9b;
+  --color-cobalt-soft: #edf1fb;
+  --color-cobalt-line: #c4d0ef;
+
+  --color-ok: #177a48;
+  --color-ok-soft: #e8f4ed;
+  --color-fail: #c13a3a;
+  --color-fail-soft: #faeceb;
+  --color-warn: #a16a12;
+  --color-warn-soft: #faf3e4;
+  --color-neutral-soft: #efeeea;
+}
+
+html {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Data — anything measured, counted, or identified — wears the mono. */
+.data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: var(--color-cobalt-line);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-cobalt);
+  outline-offset: 1px;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot { animation: none; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #ecebe7 25%, #f4f3f0 50%, #ecebe7 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}
