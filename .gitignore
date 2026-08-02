@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.superpowers/
+
+supabase/.branches
+supabase/.temp
+.env.test

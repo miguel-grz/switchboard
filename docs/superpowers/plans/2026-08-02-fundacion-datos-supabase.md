@@ -226,11 +226,21 @@ Crear `tests/db/smoke.test.ts`:
 ```ts
 import { describe, it, expect } from 'vitest'
 import { serviceClient } from './client'
+import { supabaseEnv } from './env'
 
+// Deliberadamente independiente del esquema: esta prueba sobrevive a todas las
+// migraciones posteriores. Afirmar aquí que una tabla "todavía no existe"
+// convertiría la Task 2 en la causa de un fallo en la Task 1.
 describe('instancia local', () => {
-  it('responde y todavía no tiene la tabla clients', async () => {
-    const { error } = await serviceClient().from('clients').select('id').limit(1)
-    expect(error?.message).toMatch(/relation .* does not exist|Could not find the table/)
+  it('expone la configuración de conexión', () => {
+    const env = supabaseEnv()
+    expect(env.url).toMatch(/^http/)
+    expect(env.dbUrl).toMatch(/^postgres/)
+  })
+
+  it('responde a una consulta autenticada con service_role', async () => {
+    const { error } = await serviceClient().auth.admin.listUsers()
+    expect(error).toBeNull()
   })
 })
 ```
@@ -238,7 +248,7 @@ describe('instancia local', () => {
 - [ ] **Step 8: Ejecutar la prueba**
 
 Run: `npm run test:db`
-Expected: PASS. Confirma dos cosas a la vez: que hay conexión real y que el esquema todavía no existe — el punto de partida correcto.
+Expected: PASS, 2 pruebas. Confirma que la instancia local responde y que las credenciales del arnés son correctas.
 
 - [ ] **Step 9: Commit**
 
