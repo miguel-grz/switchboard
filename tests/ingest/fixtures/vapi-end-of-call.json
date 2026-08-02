@@ -1,0 +1,63 @@
+{
+  "message": {
+    "type": "end-of-call-report",
+    "endedReason": "customer-ended-call",
+    "timestamp": 1785000000000,
+    "call": {
+      "id": "c1a2b3c4-0000-4000-8000-000000000001",
+      "assistantId": "asst_magen_intake",
+      "type": "inboundPhoneCall",
+      "customer": { "number": "+13055550147" },
+      "startedAt": "2026-08-02T02:14:05.000Z",
+      "endedAt": "2026-08-02T02:17:41.000Z",
+      "cost": 0.3412,
+      "costBreakdown": {
+        "transport": 0.0362,
+        "stt": 0.0431,
+        "llm": 0.1204,
+        "tts": 0.0915,
+        "vapi": 0.05,
+        "total": 0.3412
+      }
+    },
+    "artifact": {
+      "recording": { "stereoUrl": "https://storage.vapi.ai/rec/c1a2b3c4.wav" },
+      "transcript": "AI: Gracias por llamar a Magen Insurance...",
+      "messages": [
+        {
+          "role": "assistant",
+          "message": "Gracias por llamar a Magen Insurance. Soy un asistente automático y esta llamada se graba. ¿En qué le puedo ayudar?",
+          "secondsFromStart": 0.4
+        },
+        {
+          "role": "user",
+          "message": "Hola, quiero cancelar mi póliza de auto.",
+          "secondsFromStart": 7.2
+        },
+        {
+          "role": "assistant",
+          "message": "Entiendo. No puedo procesar la cancelación yo mismo, pero tomo sus datos y alguien del equipo lo llama. ¿Me da su nombre completo?",
+          "secondsFromStart": 11.0
+        },
+        {
+          "role": "user",
+          "message": "Rosa Elena Domínguez.",
+          "secondsFromStart": 18.5
+        }
+      ]
+    },
+    "analysis": {
+      "summary": "Rosa Elena Domínguez, asegurada actual, llamó para cancelar su póliza de auto porque vendió el vehículo. Pidió que la contacten el lunes por la mañana.",
+      "structuredData": {
+        "caller_name": "Rosa Elena Domínguez",
+        "callback_phone": "+13055550147",
+        "reason_verbatim": "Quiero cancelar mi póliza de auto porque vendí el carro",
+        "reason_category": "cancelación",
+        "is_existing_client": true,
+        "policy_number": "",
+        "urgency": "normal",
+        "summary": "Solicita cancelación de póliza de auto por venta del vehículo."
+      }
+    }
+  }
+}
