@@ -12,8 +12,11 @@ import {
   Menu,
   X,
 } from 'lucide-react'
-import { clients } from '../../mocks/clients'
 import { useScope } from '../../context/ScopeContext'
+import { useAuth } from '../../context/AuthContext'
+import { getDataSource } from '../../data'
+import { useAsync } from '../../data/hooks'
+import type { Client } from '../../types'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutGrid, end: true },
@@ -37,6 +40,8 @@ function ScopeSwitcher() {
     return () => document.removeEventListener('mousedown', onClick)
   }, [])
 
+  const { data } = useAsync(() => getDataSource().listClients(), [])
+  const clients: Client[] = data ?? []
   const current = clients.find((c) => c.id === scopeClientId)
 
   return (
@@ -122,6 +127,7 @@ function Logo() {
 
 export default function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false)
+  const { session, signOut, requiresAuth } = useAuth()
 
   return (
     <div className="flex min-h-screen">
@@ -194,14 +200,24 @@ export default function AppShell() {
           <ScopeSwitcher />
           <div className="ml-auto flex shrink-0 items-center gap-3">
             <span className="data hidden rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-mute sm:inline">
-              prod
+              {requiresAuth ? 'prod' : 'demo'}
             </span>
-            <div
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-cobalt text-[11px] font-semibold text-white"
-              title="Miguel Ángel — operator"
-            >
-              MA
-            </div>
+            {session ? (
+              <button
+                onClick={() => void signOut()}
+                title={`${session.user.email ?? 'operador'} — cerrar sesión`}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-cobalt text-[11px] font-semibold text-white hover:bg-cobalt-dark"
+              >
+                {(session.user.email ?? '?').slice(0, 2).toUpperCase()}
+              </button>
+            ) : (
+              <div
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-cobalt text-[11px] font-semibold text-white"
+                title="Miguel Ángel — operator"
+              >
+                MA
+              </div>
+            )}
           </div>
         </header>
         <main className="min-w-0 flex-1 px-3 py-4 sm:px-6 sm:py-5">

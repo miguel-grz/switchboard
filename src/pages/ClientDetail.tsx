@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, Phone, Plus } from 'lucide-react'
-import { clients, industryOptions } from '../mocks/clients'
-import { agents } from '../mocks/agents'
-import type { Agent, Run } from '../types'
-import { dailySeries, lastRunFor, runsForAgent, scopedRuns, summarize } from '../lib/metrics'
+import { industryOptions } from '../mocks/clients'
+import type { Agent, Client, Run } from '../types'
+import { getDataSource } from '../data'
+import { useAsync } from '../data/hooks'
 import { fmtLatency, fmtMoney, fmtPercent, fmtRelative } from '../lib/format'
 import {
   Panel,
@@ -27,10 +27,12 @@ const TABS = [
   { id: 'settings', label: 'Settings' },
 ]
 
-function AgentCard({ agent, clientId }: { agent: Agent; clientId: string }) {
+function AgentCard(
+  { agent, clientId, runs }: { agent: Agent; clientId: string; runs: Run[] },
+) {
   const [active, setActive] = useState(agent.status === 'active')
   const navigate = useNavigate()
-  const last = lastRunFor(agent.id)
+  const last = runs.find((r) => r.agentId === agent.id)
   const open = () => navigate(`/clients/${clientId}/agents/${agent.id}`)
   return (
     <div
@@ -70,10 +72,12 @@ function AgentCard({ agent, clientId }: { agent: Agent; clientId: string }) {
   )
 }
 
-function DataCaptured({ clientId, onSelect }: { clientId: string; onSelect: (r: Run) => void }) {
-  const clientAgents = agents.filter((a) => a.clientId === clientId)
-  const withRuns = clientAgents.filter((a) =>
-    runsForAgent(a.id).some((r) => r.status === 'completed'),
+function DataCaptured(
+  { agents, runs, onSelect }: { agents: Agent[]; runs: Run[]; onSelect: (r: Run) => void },
+) {
+  const runsFor = (agentId: string) => runs.filter((r) => r.agentId === agentId)
+  const withRuns = agents.filter((a) =>
+    runsFor(a.id).some((r) => r.status === 'completed'),
   )
   if (withRuns.length === 0) {
     return (
@@ -88,7 +92,7 @@ function DataCaptured({ clientId, onSelect }: { clientId: string; onSelect: (r: 
   return (
     <div className="space-y-4">
       {withRuns.map((agent) => {
-        const completed = runsForAgent(agent.id)
+        const completed = runsFor(agent.id)
           .filter((r) => r.status === 'completed')
           .slice(0, 5)
         const cols = agent.fields.slice(0, 4)
@@ -140,8 +144,8 @@ function DataCaptured({ clientId, onSelect }: { clientId: string; onSelect: (r: 
   )
 }
 
-function Settings({ clientId }: { clientId: string }) {
-  const client = clients.find((c) => c.id === clientId)!
+function Settings({ client }: { client: Client }) {
+
   const [modules, setModules] = useState({
     voice: client.modules.includes('voice'),
     email: client.modules.includes('email'),
@@ -241,16 +245,37 @@ export default function ClientDetail() {
   const tab = params.get('tab') ?? 'overview'
   const [selected, setSelected] = useState<Run | null>(null)
 
-  const client = clients.find((c) => c.id === clientId)
-  const clientAgents = agents.filter((a) => a.clientId === clientId)
-  const runs = useMemo(() => scopedRuns(clientId ?? null), [clientId])
-  const summary = useMemo(() => summarize(runs), [runs])
-  const series = useMemo(() => dailySeries(runs, 7), [runs])
+  const source = getDataSource()
+  const { data: clientData, loading } = useAsync(
+    () => (clientId ? source.getClient(clientId) : Promise.resolve(null)),
+    [clientId],
+  )
+  const { data: agentData } = useAsync(() => source.listAgents(clientId), [clientId])
+  const { data: runData } = useAsync(() => source.listRuns({ clientId }), [clientId])
+  const { data: summaryData } = useAsync(() => source.getSummary(clientId ?? null), [clientId])
+  const { data: seriesData } = useAsync(() => source.getDailySeries(clientId ?? null, 7), [clientId])
+
+  const client = clientData
+  const clientAgents = agentData ?? []
+  const runs = runData ?? []
+  const summary = summaryData ?? {
+    today: 0, successRate: 0, avgLatencyMs: 0, totalCostToday: 0, failedToday: 0,
+  }
+  const series = seriesData ?? []
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="skeleton h-5 w-56" />
+        <div className="skeleton h-40 w-full" />
+      </div>
+    )
+  }
 
   if (!client) {
     return (
       <Panel pad={false}>
-        <EmptyState title="Client not found" hint="It may have been removed from this prototype’s mock data." />
+        <EmptyState title="Client not found" hint="No existe un cliente con ese identificador." />
       </Panel>
     )
   }
@@ -325,16 +350,16 @@ export default function ClientDetail() {
           ) : (
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {clientAgents.map((a) => (
-                <AgentCard key={a.id} agent={a} clientId={client.id} />
+                <AgentCard key={a.id} agent={a} clientId={client.id} runs={runs} />
               ))}
             </div>
           )}
         </div>
       )}
 
-      {tab === 'data' && <DataCaptured clientId={client.id} onSelect={setSelected} />}
+      {tab === 'data' && <DataCaptured agents={clientAgents} runs={runs} onSelect={setSelected} />}
 
-      {tab === 'settings' && <Settings clientId={client.id} />}
+      {tab === 'settings' && <Settings client={client} />}
 
       <RunDetail run={selected} onClose={() => setSelected(null)} />
     </div>

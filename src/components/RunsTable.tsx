@@ -1,8 +1,8 @@
 import type { Run } from '../types'
-import { agents } from '../mocks/agents'
-import { clients } from '../mocks/clients'
 import { RunStatusBadge, Th, Td, EmptyState } from './ui'
 import { fmtDateTime, fmtDuration, fmtMoney } from '../lib/format'
+import { getDataSource } from '../data'
+import { useAsync } from '../data/hooks'
 
 export default function RunsTable({
   runs,
@@ -15,6 +15,12 @@ export default function RunsTable({
   showClient?: boolean
   emptyHint?: string
 }) {
+  const source = getDataSource()
+  const { data: agentData } = useAsync(() => source.listAgents(null), [])
+  const { data: clientData } = useAsync(() => source.listClients(), [])
+  const agents = agentData ?? []
+  const clients = clientData ?? []
+
   if (runs.length === 0) {
     return <EmptyState title="No runs match" hint={emptyHint} />
   }
