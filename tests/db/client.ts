@@ -42,19 +42,28 @@ export async function createUser(
  * `.delete().neq('id', ...)` genérico falla o compara tipos incompatibles.
  * TRUNCATE resuelve las tres cosas de una vez y reinicia las secuencias.
  */
+const MANAGED_TABLES = [
+  'action_runs', 'agent_actions', 'usage_events', 'extracted_values',
+  'transcript_turns', 'runs', 'run_raw_events', 'field_defs',
+  'agent_intents', 'agents', 'client_members', 'clients', 'profiles',
+] as const
+
 export async function resetData(): Promise<void> {
   const { dbUrl } = supabaseEnv()
   const pg = new Client({ connectionString: dbUrl })
   await pg.connect()
   try {
-    await pg.query(`
-      truncate table
-        public.action_runs, public.agent_actions, public.usage_events,
-        public.extracted_values, public.transcript_turns, public.runs,
-        public.run_raw_events, public.field_defs, public.agent_intents,
-        public.agents, public.client_members, public.clients, public.profiles
-      restart identity cascade
-    `)
+    // Solo trunca lo que ya existe: el esquema se construye por migraciones
+    // sucesivas, así que durante las primeras tareas faltan tablas de la lista
+    // y un TRUNCATE sobre una tabla ausente aborta toda la sentencia.
+    const { rows } = await pg.query<{ tablename: string }>(
+      `select tablename from pg_tables
+       where schemaname = 'public' and tablename = any($1::text[])`,
+      [MANAGED_TABLES as unknown as string[]],
+    )
+    if (rows.length === 0) return
+    const present = rows.map((r) => `public.${r.tablename}`).join(', ')
+    await pg.query(`truncate table ${present} restart identity cascade`)
   } finally {
     await pg.end()
   }
