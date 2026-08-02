@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { getAdapter } from '../_shared/providers/index.ts'
 import { projectWebhook } from '../_shared/projection.ts'
+import { runActions } from '../_shared/actions.ts'
+import { resendSender, unconfiguredSender } from '../_shared/email-sender.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
@@ -41,6 +43,25 @@ Deno.serve(async (req: Request) => {
   try {
     const parsed = adapter.parseWebhook(payload)
     const result = await projectWebhook(db, { provider, rawBody, parsed })
+
+    // Las acciones son efecto secundario: la llamada ya quedó guardada, así que
+    // un fallo aquí no puede cambiar la respuesta al proveedor ni provocar un
+    // reintento que volvería a proyectar lo mismo.
+    if (result.runId && !result.skipped) {
+      const apiKey = Deno.env.get('RESEND_API_KEY')
+      const from = Deno.env.get('EMAIL_FROM')
+        ?? 'Switchboard <notificaciones@switchboard.local>'
+      const sendEmail = apiKey ? resendSender(apiKey, from) : unconfiguredSender
+      try {
+        await runActions(db, result.runId, { sendEmail })
+      } catch (err) {
+        await db.from('events').insert({
+          type: 'actions.unhandled', level: 'error', run_id: result.runId,
+          message: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+
     // Siempre 200 si el evento quedó registrado: el proveedor reintenta ante
     // cualquier cosa que no sea 2xx, y un payload que nunca va a proyectar
     // generaría reintentos infinitos. El fallo queda en processing_error.
