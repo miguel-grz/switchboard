@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowRight } from 'lucide-react'
 import { useScope } from '../context/ScopeContext'
-import { clients } from '../mocks/clients'
-import { agents } from '../mocks/agents'
 import type { Run } from '../types'
-import { scopedRuns, summarize, dailySeries } from '../lib/metrics'
 import { fmtLatency, fmtMoney, fmtPercent, fmtRelative } from '../lib/format'
+import { getDataSource } from '../data'
+import { useAsync } from '../data/hooks'
 import { Panel, Stat, SkeletonRows } from '../components/ui'
 import { ActivityChart, ChartLegend } from '../components/charts'
 import RunsTable from '../components/RunsTable'
@@ -16,17 +15,24 @@ export default function Dashboard() {
   const { scopeClientId } = useScope()
   const navigate = useNavigate()
   const [selected, setSelected] = useState<Run | null>(null)
-  // Simulated fetch so the stakeholder sees the loading treatment.
-  const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    setLoading(true)
-    const t = setTimeout(() => setLoading(false), 650)
-    return () => clearTimeout(t)
-  }, [scopeClientId])
+  const source = getDataSource()
 
-  const runs = useMemo(() => scopedRuns(scopeClientId), [scopeClientId])
-  const summary = useMemo(() => summarize(runs), [runs])
-  const series = useMemo(() => dailySeries(runs, 7), [runs])
+  const { data: runData, loading, error } = useAsync(
+    () => source.listRuns({ clientId: scopeClientId }),
+    [scopeClientId],
+  )
+  const { data: summaryData } = useAsync(() => source.getSummary(scopeClientId), [scopeClientId])
+  const { data: seriesData } = useAsync(() => source.getDailySeries(scopeClientId, 7), [scopeClientId])
+  const { data: clientData } = useAsync(() => source.listClients(), [])
+  const { data: agentData } = useAsync(() => source.listAgents(null), [])
+
+  const runs = runData ?? []
+  const clients = clientData ?? []
+  const agents = agentData ?? []
+  const summary = summaryData ?? {
+    today: 0, successRate: 0, avgLatencyMs: 0, totalCostToday: 0, failedToday: 0,
+  }
+  const series = seriesData ?? []
   const recent = runs.slice(0, 9)
   const alerts = runs.filter((r) => r.status === 'failed').slice(0, 5)
   const scopeName = clients.find((c) => c.id === scopeClientId)?.name
@@ -43,6 +49,12 @@ export default function Dashboard() {
       </div>
 
       {/* Stat row */}
+      {error && (
+        <div className="rounded-md border border-fail/25 bg-fail-soft px-4 py-3 text-[13px] text-fail">
+          No se pudieron cargar los datos: {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => (

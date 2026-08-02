@@ -1,12 +1,28 @@
 import { useNavigate } from 'react-router-dom'
 import { Plus } from 'lucide-react'
-import { clients } from '../mocks/clients'
-import { agents } from '../mocks/agents'
-import { runsThisMonth } from '../lib/metrics'
-import { Panel, Th, Td, ClientStatusBadge, ModuleChip } from '../components/ui'
+import {
+  Panel, Th, Td, ClientStatusBadge, ModuleChip, SkeletonRows, EmptyState,
+} from '../components/ui'
+import { getDataSource } from '../data'
+import { useAsync } from '../data/hooks'
 
 export default function Clients() {
   const navigate = useNavigate()
+  const source = getDataSource()
+  const { data, error, loading } = useAsync(() => source.listClients(), [])
+  const { data: agentData } = useAsync(() => source.listAgents(null), [])
+  const { data: runData } = useAsync(() => source.listRuns({}), [])
+
+  const clients = data ?? []
+  const agents = agentData ?? []
+  const runs = runData ?? []
+  const now = new Date()
+  const runsThisMonth = (clientId: string) =>
+    runs.filter(r => {
+      const d = new Date(r.startedAt)
+      return r.clientId === clientId
+        && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+    }).length
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -20,6 +36,16 @@ export default function Clients() {
       </div>
 
       <Panel pad={false}>
+        {loading ? (
+          <SkeletonRows rows={4} cols={6} />
+        ) : error ? (
+          <EmptyState title="No se pudieron cargar los clientes" hint={error} />
+        ) : clients.length === 0 ? (
+          <EmptyState
+            title="Todavía no hay clientes"
+            hint="Cuando des de alta el primer negocio, aparecerá aquí con sus agentes y su actividad."
+          />
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
@@ -64,6 +90,7 @@ export default function Clients() {
             </tbody>
           </table>
         </div>
+        )}
       </Panel>
     </div>
   )

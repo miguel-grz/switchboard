@@ -1,11 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useScope } from '../context/ScopeContext'
-import { clients } from '../mocks/clients'
-import { agents } from '../mocks/agents'
 import type { Run, RunStatus } from '../types'
-import { scopedRuns } from '../lib/metrics'
 import { fmtMoney } from '../lib/format'
-import { Panel } from '../components/ui'
+import { Panel, SkeletonRows, EmptyState } from '../components/ui'
+import { getDataSource } from '../data'
+import { useAsync } from '../data/hooks'
 import RunsTable from '../components/RunsTable'
 import RunDetail from '../components/RunDetail'
 
@@ -26,12 +25,24 @@ export default function Runs() {
   const [agentId, setAgentId] = useState<string>('all')
   const [selected, setSelected] = useState<Run | null>(null)
 
-  const base = useMemo(() => scopedRuns(scopeClientId), [scopeClientId])
-  const filtered = base.filter(
-    (r) => (status === 'all' || r.status === status) && (agentId === 'all' || r.agentId === agentId),
+  const source = getDataSource()
+  // El filtrado pasó del cliente a la consulta: es lo que permitirá paginar
+  // cuando haya miles de llamadas en vez de decenas.
+  const { data, error, loading } = useAsync(
+    () => source.listRuns({
+      clientId: scopeClientId,
+      agentId: agentId === 'all' ? null : agentId,
+      status,
+    }),
+    [scopeClientId, agentId, status],
   )
+  const { data: agentData } = useAsync(() => source.listAgents(scopeClientId), [scopeClientId])
+  const { data: clientData } = useAsync(() => source.listClients(), [])
+
+  const filtered = data ?? []
+  const agentOptions = agentData ?? []
+  const clients = clientData ?? []
   const totalCost = filtered.reduce((a, r) => a + r.costUsd, 0)
-  const agentOptions = agents.filter((a) => !scopeClientId || a.clientId === scopeClientId)
 
   return (
     <div className="space-y-4">
@@ -84,12 +95,18 @@ export default function Runs() {
       </div>
 
       <Panel pad={false}>
-        <RunsTable
-          runs={filtered}
-          onSelect={setSelected}
-          showClient={!scopeClientId}
-          emptyHint="No runs match these filters. Clear them, or widen the client scope in the top bar."
-        />
+        {loading ? (
+          <SkeletonRows rows={8} cols={6} />
+        ) : error ? (
+          <EmptyState title="No se pudieron cargar los runs" hint={error} />
+        ) : (
+          <RunsTable
+            runs={filtered}
+            onSelect={setSelected}
+            showClient={!scopeClientId}
+            emptyHint="No runs match these filters. Clear them, or widen the client scope in the top bar."
+          />
+        )}
       </Panel>
 
       <RunDetail run={selected} onClose={() => setSelected(null)} />

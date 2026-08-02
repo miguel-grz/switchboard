@@ -1,7 +1,8 @@
 import { Mic, Mail, MessageSquare, FileText, Check } from 'lucide-react'
 import { modules } from '../mocks/modules'
-import { clients } from '../mocks/clients'
 import type { ModuleType } from '../types'
+import { getDataSource } from '../data'
+import { useAsync } from '../data/hooks'
 
 const icons: Record<ModuleType, typeof Mic> = {
   voice: Mic,
@@ -11,6 +12,10 @@ const icons: Record<ModuleType, typeof Mic> = {
 }
 
 export default function Modules() {
+  // El catálogo de módulos es estático; solo el recuento de clientes es real.
+  const { data } = useAsync(() => getDataSource().listClients(), [])
+  const clients = data ?? []
+
   return (
     <div className="space-y-4">
       <div>

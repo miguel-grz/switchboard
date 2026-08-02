@@ -28,3 +28,4 @@ supabase/.branches
 supabase/.temp
 .env.test
 supabase/functions/.env.local
+.env.local

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   ChevronLeft,
@@ -10,8 +10,8 @@ import {
   Phone,
   Check,
 } from 'lucide-react'
-import { agents } from '../mocks/agents'
-import { clients } from '../mocks/clients'
+import { getDataSource } from '../data'
+import { useAsync } from '../data/hooks'
 import type { FieldDef, FieldType, Provider } from '../types'
 import { Panel, Toggle, ModuleChip, EmptyState } from '../components/ui'
 
@@ -35,19 +35,45 @@ const inputCls =
 
 export default function AgentConfig() {
   const { clientId, agentId } = useParams()
-  const agent = agents.find((a) => a.id === agentId)
-  const client = clients.find((c) => c.id === clientId)
+  const source = getDataSource()
+  const { data: agent, loading } = useAsync(
+    () => (agentId ? source.getAgent(agentId) : Promise.resolve(null)),
+    [agentId],
+  )
+  const { data: client } = useAsync(
+    () => (clientId ? source.getClient(clientId) : Promise.resolve(null)),
+    [clientId],
+  )
 
-  const [active, setActive] = useState(agent?.status === 'active')
-  const [provider, setProvider] = useState<Provider>(agent?.provider ?? 'vapi')
-  const [prompt, setPrompt] = useState(agent?.systemPrompt ?? '')
-  const [fields, setFields] = useState<FieldDef[]>(agent?.fields ?? [])
+  const [active, setActive] = useState(false)
+  const [provider, setProvider] = useState<Provider>('vapi')
+  const [prompt, setPrompt] = useState('')
+  const [fields, setFields] = useState<FieldDef[]>([])
   const [saved, setSaved] = useState(false)
+
+  // El formulario es editable, así que su estado se siembra una vez cuando
+  // llega el agente; después manda lo que el operador haya escrito.
+  useEffect(() => {
+    if (!agent) return
+    setActive(agent.status === 'active')
+    setProvider(agent.provider)
+    setPrompt(agent.systemPrompt)
+    setFields(agent.fields)
+  }, [agent])
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="skeleton h-5 w-64" />
+        <div className="skeleton h-64 w-full" />
+      </div>
+    )
+  }
 
   if (!agent || !client) {
     return (
       <Panel pad={false}>
-        <EmptyState title="Agent not found" hint="It may have been removed from this prototype’s mock data." />
+        <EmptyState title="Agent not found" hint="No existe un agente con ese identificador." />
       </Panel>
     )
   }

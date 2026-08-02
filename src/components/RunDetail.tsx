@@ -1,9 +1,9 @@
 import { Play, Download, AlertTriangle } from 'lucide-react'
 import type { Run } from '../types'
-import { agents } from '../mocks/agents'
-import { clients } from '../mocks/clients'
 import { Drawer, RunStatusBadge } from './ui'
 import { fmtDateTime, fmtDuration, fmtLatency, fmtMoney } from '../lib/format'
+import { getDataSource } from '../data'
+import { useAsync } from '../data/hooks'
 
 function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -15,8 +15,19 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function RunDetail({ run, onClose }: { run: Run | null; onClose: () => void }) {
-  const agent = run ? agents.find((a) => a.id === run.agentId) : undefined
-  const client = run ? clients.find((c) => c.id === run.clientId) : undefined
+  const source = getDataSource()
+  const { data: agentData } = useAsync(() => source.listAgents(null), [])
+  const { data: clientData } = useAsync(() => source.listClients(), [])
+
+  // La lista no trae transcripción ni datos extraídos: se piden al abrir.
+  const { data: full } = useAsync(
+    () => (run ? source.getRun(run.id) : Promise.resolve(null)),
+    [run?.id],
+  )
+  const detail = full ?? run
+
+  const agent = run ? (agentData ?? []).find((a) => a.id === run.agentId) : undefined
+  const client = run ? (clientData ?? []).find((c) => c.id === run.clientId) : undefined
 
   return (
     <Drawer
@@ -85,7 +96,7 @@ export default function RunDetail({ run, onClose }: { run: Run | null; onClose: 
             <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-mute">
               Extracted data
             </h3>
-            {Object.keys(run.extracted).length === 0 ? (
+            {Object.keys(detail!.extracted).length === 0 ? (
               <div className="rounded-md border border-dashed border-line px-3.5 py-4 text-[13px] text-mute">
                 {run.status === 'in_progress'
                   ? 'Extraction runs when the call ends.'
@@ -93,7 +104,7 @@ export default function RunDetail({ run, onClose }: { run: Run | null; onClose: 
               </div>
             ) : (
               <dl className="overflow-hidden rounded-md border border-line">
-                {Object.entries(run.extracted).map(([k, v], i) => (
+                {Object.entries(detail!.extracted).map(([k, v], i) => (
                   <div
                     key={k}
                     className={`grid grid-cols-[200px_1fr] gap-3 px-3.5 py-2 ${i % 2 ? '' : 'bg-sunken/40'}`}
@@ -110,7 +121,7 @@ export default function RunDetail({ run, onClose }: { run: Run | null; onClose: 
           <div>
             <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-mute">Transcript</h3>
             <div className="space-y-3 rounded-md border border-line p-4">
-              {run.transcript.map((t, i) => (
+              {detail!.transcript.map((t, i) => (
                 <div key={i} className="grid grid-cols-[64px_1fr] gap-3">
                   <span
                     className={`data pt-px text-[11px] font-medium ${

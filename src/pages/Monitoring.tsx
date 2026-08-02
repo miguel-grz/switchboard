@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useScope } from '../context/ScopeContext'
-import { clients } from '../mocks/clients'
-import { agents } from '../mocks/agents'
 import type { Run } from '../types'
-import { scopedRuns, dailySeries, latencyBuckets } from '../lib/metrics'
+import { dailySeries, latencyBuckets } from '../lib/metrics'
+import { getDataSource } from '../data'
+import { useAsync } from '../data/hooks'
 import { fmtDateTime, fmtLatency, fmtPercent } from '../lib/format'
 import { Panel, Stat, Th, Td } from '../components/ui'
 import { ActivityChart, ChartLegend, LatencyChart } from '../components/charts'
@@ -13,7 +13,16 @@ export default function Monitoring() {
   const { scopeClientId } = useScope()
   const [selected, setSelected] = useState<Run | null>(null)
 
-  const runs = useMemo(() => scopedRuns(scopeClientId), [scopeClientId])
+  const source = getDataSource()
+  const { data: runData } = useAsync(
+    () => source.listRuns({ clientId: scopeClientId }), [scopeClientId],
+  )
+  const { data: clientData } = useAsync(() => source.listClients(), [])
+  const { data: agentData } = useAsync(() => source.listAgents(null), [])
+
+  const runs = useMemo(() => runData ?? [], [runData])
+  const clients = clientData ?? []
+  const agents = agentData ?? []
   const series = useMemo(() => dailySeries(runs, 14), [runs])
   const buckets = useMemo(() => latencyBuckets(runs), [runs])
 

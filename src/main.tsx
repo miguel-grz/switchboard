@@ -4,13 +4,16 @@ import { HashRouter } from 'react-router-dom'
 import './index.css'
 import App from './App'
 import { ScopeProvider } from './context/ScopeContext'
+import { AuthProvider } from './context/AuthContext'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <HashRouter>
-      <ScopeProvider>
-        <App />
-      </ScopeProvider>
+      <AuthProvider>
+        <ScopeProvider>
+          <App />
+        </ScopeProvider>
+      </AuthProvider>
     </HashRouter>
   </StrictMode>,
 )
