@@ -412,3 +412,9 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# El webhook lo llama un proveedor externo, que nunca enviará un JWT de
+# Supabase. La autenticación real la hace el adaptador verificando la firma
+# del proveedor sobre el cuerpo crudo.
+[functions.provider-webhook]
+verify_jwt = false
