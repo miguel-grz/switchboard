@@ -11,6 +11,22 @@ npm install
 npm run dev
 ```
 
+## Base de datos (desarrollo)
+
+Requiere Docker en ejecución.
+
+```bash
+npm run db:start     # levanta Postgres, Auth y API en local
+npm run db:reset     # reaplica migraciones y siembra datos de Magen
+npm run test:db      # ejecuta las pruebas de esquema y RLS
+npm run db:types     # regenera src/lib/database.types.ts
+```
+
+Las migraciones viven en `supabase/migrations/` y no se editan una vez aplicadas:
+cada cambio va en una migración nueva. Cada migración crea sus tablas, concede
+privilegios y activa RLS en el mismo archivo, para que no exista ninguna ventana
+en la que una tabla esté creada pero desprotegida.
+
 ## What's here
 
 - **Dashboard** — cross-client metrics, 7-day activity, failed-run alerts, recent runs (with loading skeletons).
