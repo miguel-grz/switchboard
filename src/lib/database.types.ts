@@ -184,6 +184,57 @@ export type Database = {
           },
         ]
       }
+      agent_revisions: {
+        Row: {
+          agent_id: string
+          created_at: string
+          created_by: string | null
+          fields: Json
+          id: string
+          provider: string
+          provider_agent_id: string | null
+          system_prompt: string
+          version: number
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          created_by?: string | null
+          fields?: Json
+          id?: string
+          provider: string
+          provider_agent_id?: string | null
+          system_prompt: string
+          version: number
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          created_by?: string | null
+          fields?: Json
+          id?: string
+          provider?: string
+          provider_agent_id?: string | null
+          system_prompt?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_revisions_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_revisions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agents: {
         Row: {
           channel: string | null
@@ -312,6 +363,67 @@ export type Database = {
         }
         Relationships: []
       }
+      events: {
+        Row: {
+          agent_id: string | null
+          client_id: string | null
+          id: number
+          latency_ms: number | null
+          level: string
+          message: string | null
+          occurred_at: string
+          payload: Json | null
+          run_id: string | null
+          type: string
+        }
+        Insert: {
+          agent_id?: string | null
+          client_id?: string | null
+          id?: number
+          latency_ms?: number | null
+          level?: string
+          message?: string | null
+          occurred_at?: string
+          payload?: Json | null
+          run_id?: string | null
+          type: string
+        }
+        Update: {
+          agent_id?: string | null
+          client_id?: string | null
+          id?: number
+          latency_ms?: number | null
+          level?: string
+          message?: string | null
+          occurred_at?: string
+          payload?: Json | null
+          run_id?: string | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "events_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       extracted_values: {
         Row: {
           confidence: number | null
@@ -434,6 +546,42 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_rates: {
+        Row: {
+          component: string
+          created_at: string
+          effective_from: string
+          effective_to: string | null
+          id: string
+          notes: string | null
+          provider: string
+          unit: string
+          unit_cost_usd: number
+        }
+        Insert: {
+          component: string
+          created_at?: string
+          effective_from: string
+          effective_to?: string | null
+          id?: string
+          notes?: string | null
+          provider: string
+          unit: string
+          unit_cost_usd: number
+        }
+        Update: {
+          component?: string
+          created_at?: string
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          notes?: string | null
+          provider?: string
+          unit?: string
+          unit_cost_usd?: number
+        }
+        Relationships: []
+      }
       run_raw_events: {
         Row: {
           event_type: string
@@ -473,6 +621,7 @@ export type Database = {
       runs: {
         Row: {
           agent_id: string
+          agent_revision_id: string | null
           caller_number: string | null
           client_id: string
           created_at: string
@@ -495,6 +644,7 @@ export type Database = {
         }
         Insert: {
           agent_id: string
+          agent_revision_id?: string | null
           caller_number?: string | null
           client_id: string
           created_at?: string
@@ -517,6 +667,7 @@ export type Database = {
         }
         Update: {
           agent_id?: string
+          agent_revision_id?: string | null
           caller_number?: string | null
           client_id?: string
           created_at?: string
@@ -543,6 +694,13 @@ export type Database = {
             columns: ["agent_id"]
             isOneToOne: false
             referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "runs_agent_revision_id_fkey"
+            columns: ["agent_revision_id"]
+            isOneToOne: false
+            referencedRelation: "agent_revisions"
             referencedColumns: ["id"]
           },
           {
@@ -607,6 +765,7 @@ export type Database = {
           run_id: string | null
           source_event_id: string | null
           unit: string
+          unit_cost_usd: number | null
         }
         Insert: {
           agent_id?: string | null
@@ -625,6 +784,7 @@ export type Database = {
           run_id?: string | null
           source_event_id?: string | null
           unit: string
+          unit_cost_usd?: number | null
         }
         Update: {
           agent_id?: string | null
@@ -643,6 +803,7 @@ export type Database = {
           run_id?: string | null
           source_event_id?: string | null
           unit?: string
+          unit_cost_usd?: number | null
         }
         Relationships: [
           {
@@ -675,6 +836,15 @@ export type Database = {
     Functions: {
       has_client_access: { Args: { cid: string }; Returns: boolean }
       is_operator: { Args: never; Returns: boolean }
+      rate_for: {
+        Args: {
+          p_at: string
+          p_component: string
+          p_provider: string
+          p_unit: string
+        }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never
