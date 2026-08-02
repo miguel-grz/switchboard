@@ -19,6 +19,22 @@ Luis pide explícitamente que no se construyan esas vistas ahora, sino que **los
 queden preparados para hacerlo después sin rehacer la base**. Este diseño trata ambos puntos como
 decisiones de esquema de día uno, no como features futuras.
 
+En un correo anterior (24/07/2026) fijó además la visión de negocio que la arquitectura debe admitir:
+Magen es el primer cliente y campo de prueba, pero la meta es ofrecer **distintos agentes y
+automatizaciones de AI a muchas empresas de industrias diferentes**. De ahí cuatro exigencias que
+este diseño asume como restricciones, no como deseos:
+
+- Base pensada para múltiples clientes desde el inicio → §6.1 y §7
+- Campos, prompts y **workflows configurables**, nunca específicos de seguros → §6.2, §6.5 y §8
+- Poder añadir módulos de AI e **integraciones** en el futuro → §6.5
+- **No depender demasiado de un solo proveedor** como Vapi o Retell → §5.1
+
+También anticipa un sistema central de monitoreo de todos los agentes, que él sitúa como
+*eventual*; este milestone no lo construye pero deja los datos que lo alimentan (§12).
+
+El plazo objetivo que plantea es de 3–4 semanas para el prototipo probado en Magen, lo que encaja con
+el alcance de §4.
+
 ## 2. Objetivo del milestone
 
 Un agente de voz real de Magen que atiende llamadas en un número de pruebas, captura la información
@@ -41,6 +57,8 @@ capturado y la llamada aparece en el console con transcript, datos y costo.
 | Entrega | Correo por llamada + digest diario | Valida calidad de extracción de inmediato y sirve a Magen sin esperar al dashboard de cliente |
 | Ingesta | Payload crudo inmutable **y** proyección | Permite reprocesar llamadas viejas al mejorar el prompt; respaldo auditable del costo |
 | Costo | Ledger append-only con `cost_usd` y `billed_usd` | Margen = precio − costo; registrar ambos lados hace el histórico utilizable hacia atrás |
+| Acoplamiento al proveedor | Frontera de adaptador; modelo canónico aguas abajo | Añadir Retell es un módulo nuevo, no una migración |
+| Efectos posteriores a la llamada | `agent_actions` como datos, no código | Los workflows e integraciones futuras entran con un `insert` |
 
 ## 4. Alcance
 
@@ -67,13 +85,15 @@ Sin servidor propio. El SPA habla directo con Supabase y el acceso lo decide RLS
 código de servidor son cuatro Edge Functions.
 
 ```
-Llamada → Vapi → [webhook firmado]
+Llamada → Proveedor (Vapi) → [webhook firmado]
                       ↓
-              run_raw_events          ← inmutable, fuente de verdad
-                      ↓ proyección
+                 ADAPTADOR              ← única capa que conoce al proveedor
+                      ↓
+              run_raw_events            ← inmutable, fuente de verdad
+                      ↓ proyección canónica
    runs · transcript_turns · extracted_values · usage_events
                       ↓
-        correo por llamada  →  digest diario (cron por timezone)
+              agent_actions             ← correo por llamada, digest, webhook…
                       ↓
     Console (SPA) lee vía RLS con la sesión del usuario
 ```
@@ -82,10 +102,38 @@ Llamada → Vapi → [webhook firmado]
 
 | Función | Responsabilidad |
 |---|---|
-| `vapi-webhook` | Verifica firma, escribe el crudo, proyecta, encola notificación |
-| `send-call-email` | Correo por llamada vía Resend |
-| `daily-digest` | Cron; un digest por cliente en su timezone |
+| `provider-webhook` | Verifica firma, escribe el crudo, proyecta vía adaptador, encola acciones |
+| `run-actions` | Ejecuta las acciones configuradas del agente (hoy: correo por llamada) |
+| `daily-digest` | Cron; digest en el timezone del cliente |
 | `reprocess-run` | Reproyecta desde el crudo con una nueva versión de extracción |
+
+### 5.1 Independencia de proveedor
+
+Requisito explícito de Luis. Se resuelve con una **frontera de adaptador**: todo lo que sabe que
+existe Vapi vive en un único módulo que implementa esta interfaz, y nada más en el sistema conoce su
+forma.
+
+```ts
+interface ProviderAdapter {
+  verifySignature(req: Request): boolean
+  parseEvent(payload: unknown): CanonicalRunEvent   // llamada, turnos, campos, estado
+  parseUsage(payload: unknown): CanonicalUsage[]    // componente, cantidad, unidad, costo
+  buildAssistantConfig(agent: Agent, fields: FieldDef[]): unknown  // schema de extracción
+}
+```
+
+Aguas abajo del adaptador, el modelo es canónico y neutro: `runs`, `transcript_turns`,
+`extracted_values` y `usage_events` no tienen ninguna columna con forma de Vapi más allá de
+`provider` y `provider_call_id`, que son deliberadamente opacos. Añadir Retell es escribir un segundo
+adaptador y una fila de configuración, sin migración ni cambios en el console.
+
+El costo real de esta decisión es bajo — una interfaz y un módulo — y evita el escenario que a Luis
+le preocupa: que el proveedor se vuelva inseparable del producto.
+
+Dos límites honestos que conviene nombrar: la **calidad de la extracción sí depende del proveedor**,
+porque cada uno la implementa distinto, así que cambiar de proveedor obliga a revalidar el golden set
+(§10); y los **números de teléfono son del proveedor**, de modo que migrar implica portarlos o
+reemplazarlos. La independencia es de arquitectura, no de operación.
 
 Las Edge Functions usan `service_role` y por tanto pasan por encima de RLS; RLS protege el acceso
 desde el SPA, que es donde vive la sesión del usuario.
@@ -263,27 +311,45 @@ consumo no se abre relajando esta política, sino mediante una vista dedicada qu
 `billed_usd`, cantidad y fecha. Así el costo interno nunca queda a un error de política de distancia
 de un cliente.
 
-### 6.5 Notificaciones
+### 6.5 Acciones (la base de los workflows configurables)
+
+Luis pide workflows configurables e integraciones futuras. En vez de cablear "manda un correo" en el
+código, **lo que ocurre al terminar una llamada es configuración**: filas de `agent_actions`. El
+correo por llamada es simplemente el primer tipo de acción implementado.
 
 ```sql
-notification_settings (
-  client_id uuid pk references clients(id) on delete cascade,
-  per_call_email boolean not null default true,
-  daily_digest boolean not null default true,
-  digest_hour int not null default 7,    -- en el timezone del cliente
-  recipients text[] not null default '{}'
+agent_actions (
+  id uuid pk,
+  agent_id uuid not null references agents(id) on delete cascade,
+  type text not null check (type in ('email_per_run','email_digest','webhook')),
+  config jsonb not null default '{}',    -- destinatarios, hora del digest, url, cabeceras
+  condition jsonb,                       -- NULL = siempre; ej. {"urgency":"urgente"}
+  enabled boolean not null default true,
+  sort_order int not null default 0,
+  created_at timestamptz default now()
 )
 
-notifications_sent (
+action_runs (                            -- append-only; qué se ejecutó y con qué resultado
   id bigserial pk,
+  action_id uuid references agent_actions(id) on delete set null,
   client_id uuid not null references clients(id),
-  run_id uuid references runs(id),       -- NULL en digest
-  kind text not null check (kind in ('per_call','daily_digest')),
-  recipients text[] not null,
-  status text not null check (status in ('sent','failed')),
-  error text, sent_at timestamptz default now()
+  agent_id  uuid not null references agents(id),
+  run_id    uuid references runs(id),    -- NULL en digest
+  type text not null,
+  status text not null check (status in ('sent','failed','skipped')),
+  detail jsonb, error text,
+  attempt int not null default 1,
+  executed_at timestamptz default now()
 )
 ```
+
+En v1 se implementan `email_per_run` y `email_digest`. `webhook` queda declarado pero sin
+implementar: es el punto de extensión por el que entrarán las integraciones futuras (CRM, el AMS de
+la agencia, Zapier) sin tocar el esquema. `condition` permite después "SMS solo si es urgente" como
+una fila, no como código nuevo.
+
+Esto sustituye a las tablas de notificaciones que tendría un diseño más estrecho, y es la diferencia
+entre añadir una integración con un `insert` o con una refactorización.
 
 ## 7. Seguridad a nivel de fila
 
@@ -300,7 +366,8 @@ has_client_access(cid)   -- is_operator() OR existe client_members(auth.uid(), c
 | `runs`, `transcript_turns`, `extracted_values` | `has_client_access` | solo service_role |
 | `usage_events` | **solo operator** | solo service_role |
 | `run_raw_events` | **solo operator** | solo service_role |
-| `notification_settings` | `has_client_access` | solo operator |
+| `agent_actions` | `has_client_access` | solo operator |
+| `action_runs` | `has_client_access` | solo service_role |
 | `profiles`, `client_members` | propio perfil u operator | solo operator |
 
 `extracted_values` y `transcript_turns` heredan el acceso por el `client_id` de su `run` mediante
@@ -323,6 +390,13 @@ subconsulta en la política.
 
 Opciones de `reason_category`: cancelación · cotización · pago · cambio de póliza · siniestro ·
 documentos · otro.
+
+**Nada de esto es específico de seguros a nivel de sistema.** Todo el vocabulario anterior —
+incluidos `policy_number` y las categorías— son **filas de `field_defs` del agente de Magen**, no
+columnas ni enums del esquema. El agente de una clínica dental o de una transportadora se configura
+con otros campos sin un solo cambio de código ni de base. Es exactamente la exigencia de Luis de que
+la base no sea específica de seguros, y es la razón por la que `extracted_values` es clave-valor
+(§6.3) en lugar de una tabla con columnas fijas.
 
 La extracción la ejecuta Vapi al cerrar la llamada contra un JSON schema **generado desde
 `field_defs`**, de modo que el constructor de campos del console sigue siendo la única fuente de
@@ -351,7 +425,7 @@ Principio: **se escribe el crudo primero; la ingesta nunca se pierde por un fall
 | Webhook duplicado | `unique` en `provider_call_id` y `source_event_id`: un run, un solo cargo |
 | Extracción pobre | `extraction_status = 'partial'`; `reprocess-run` la rehace desde el crudo |
 | Llamada cortada | `status = 'failed'`, se guarda el transcript parcial y **se registra el usage igual** |
-| Correo falla | `notifications_sent` con error y reintento; nunca bloquea la ingesta |
+| Acción falla (correo, webhook) | `action_runs` con error y reintento; nunca bloquea la ingesta |
 | Vapi no reporta costo | `usage_events` con `cost_usd` nulo y `reconciled = false` para conciliar después |
 
 ## 10. Pruebas
@@ -381,7 +455,11 @@ sobre un mock.
 ## 12. Fases siguientes
 
 1. **Este milestone** — fundación + slice vertical de Magen
-2. **Console conectado** — reemplazar los mocks restantes (Modules, Monitoring)
+2. **Console conectado y monitoreo central** — reemplazar los mocks restantes. El sistema central de
+   monitoreo que pide Luis no necesita tablas nuevas: se alimenta de `runs.status`,
+   `runs.latency_ms`, `runs.extraction_status`, `run_raw_events.processing_error` y
+   `action_runs.error`, que este milestone ya escribe
 3. **Auth + dashboard de cliente** — punto 1 de Luis, sobre RLS ya escrita
 4. **Planes y márgenes** — poblar `billed_usd`, encima del ledger existente
-5. **Módulos email / SMS / documentos** — el catálogo ya existe
+5. **Integraciones** — implementar el tipo de acción `webhook` ya declarado (CRM, AMS, Zapier)
+6. **Módulos email / SMS / documentos** — el catálogo ya existe
