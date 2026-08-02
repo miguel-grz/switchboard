@@ -6,9 +6,11 @@ import { registerAdapter, type ProviderAdapter } from './adapter.ts'
  */
 export const retellAdapter: ProviderAdapter = {
   name: 'retell',
+  apiBaseUrl: 'https://api.retellai.com',
   verifySignature: () => Promise.resolve(false),
   parseWebhook: () => { throw new Error('Adaptador de Retell no implementado') },
   buildExtractionSchema: () => { throw new Error('Adaptador de Retell no implementado') },
+  buildAssistantConfig: () => { throw new Error('Adaptador de Retell no implementado') },
 }
 
 registerAdapter(retellAdapter)

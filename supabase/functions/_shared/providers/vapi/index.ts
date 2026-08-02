@@ -1,4 +1,4 @@
-import { registerAdapter, type ProviderAdapter } from '../adapter.ts'
+import { registerAdapter, type ProviderAdapter, type AssistantInput } from '../adapter.ts'
 import type {
   CanonicalEvent, CanonicalRun, CanonicalTurn, CanonicalUsage,
   FieldDef, ParsedWebhook, RunStatus,
@@ -137,6 +137,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 
 export const vapiAdapter: ProviderAdapter = {
   name: 'vapi',
+  apiBaseUrl: 'https://api.vapi.ai',
 
   async verifySignature(headers: Headers, rawBody: string, secret: string): Promise<boolean> {
     try {
@@ -242,6 +243,26 @@ export const vapiAdapter: ProviderAdapter = {
       type: 'object',
       properties,
       required: fields.filter(f => f.required).map(f => f.key),
+    }
+  },
+
+  buildAssistantConfig(input: AssistantInput): unknown {
+    return {
+      name: input.name,
+      model: {
+        provider: 'openai',
+        model: 'gpt-4o',
+        messages: [{ role: 'system', content: input.systemPrompt }],
+      },
+      // Sin structuredDataPlan habilitado, Vapi no devuelve structuredData y
+      // la extracción llegaría vacía en cada llamada.
+      analysisPlan: {
+        structuredDataPlan: {
+          enabled: true,
+          schema: this.buildExtractionSchema(input.fields),
+        },
+        summaryPlan: { enabled: true },
+      },
     }
   },
 }
