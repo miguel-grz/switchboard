@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { serviceClient, resetData } from '../db/client'
 import { supabaseEnv } from '../db/env'
+import { requireFunctionsServer } from './functions-ready'
 
 const raw = readFileSync(resolve(__dirname, 'fixtures/vapi-end-of-call.json'), 'utf8')
 const SECRET = 'secreto-de-pruebas'
@@ -31,6 +32,7 @@ async function seedAgent() {
 
 // Requiere `npx supabase functions serve` corriendo en otra terminal.
 describe('webhook del proveedor', () => {
+  beforeAll(requireFunctionsServer)
   beforeEach(resetData)
 
   it('rechaza una petición sin credencial', async () => {

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { renderRunEmail } from './email.ts'
+import { renderRunEmail, renderDigestEmail, type DigestRun } from './email.ts'
 
 export interface RunContext {
   runId: string
@@ -155,6 +155,11 @@ export async function runActions(
         continue
       }
 
+      // El digest no se dispara por llamada: lo manda el cron una vez al día
+      // (ver runDigest). Aquí se omite en silencio, sin registrar nada, para
+      // no llenar action_runs de ruido en cada llamada.
+      if (action.type === 'email_digest') continue
+
       if (action.type !== 'email_per_run') {
         // `webhook` está declarado en el esquema pero aún sin implementación.
         await record(action, 'skipped', { reason: `tipo ${action.type} no implementado` })
@@ -182,6 +187,101 @@ export async function runActions(
         client_id: ctx.clientId, agent_id: ctx.agentId, run_id: runId,
         type: 'action.failed', level: 'error',
         message: `Acción ${action.type}: ${message}`,
+      })
+      result.failed++
+    }
+  }
+
+  return result
+}
+
+export interface DigestResult {
+  sent: number
+  skipped: number
+  failed: number
+}
+
+/**
+ * Manda el resumen diario de cada agente que lo tenga configurado.
+ *
+ * Lo dispara un cron, no una llamada. La ventana es "desde el mismo corte de
+ * ayer": si el digest sale a las 7:00, cubre de las 7:00 de ayer a ahora, de
+ * modo que ninguna llamada se queda sin aparecer en ningún resumen.
+ */
+export async function runDigest(
+  db: SupabaseClient,
+  deps: ActionDeps,
+  now: Date = new Date(),
+): Promise<DigestResult> {
+  const result: DigestResult = { sent: 0, skipped: 0, failed: 0 }
+
+  const { data: actions } = await db.from('agent_actions')
+    .select('id, agent_id, type, config, enabled, agents ( id, name, client_id, clients ( name ) )')
+    .eq('type', 'email_digest').eq('enabled', true)
+
+  if (!actions?.length) return result
+
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
+
+  for (const action of actions) {
+    const agent = action.agents as unknown as
+      { id: string; name: string; client_id: string; clients: { name: string } | null } | null
+    if (!agent) {
+      result.skipped++
+      continue
+    }
+
+    try {
+      const recipients = ((action.config as { recipients?: string[] })?.recipients ?? [])
+        .filter(r => typeof r === 'string' && r.includes('@'))
+
+      if (recipients.length === 0) {
+        await db.from('action_runs').insert({
+          action_id: action.id, client_id: agent.client_id, agent_id: agent.id,
+          type: 'email_digest', status: 'skipped',
+          detail: { reason: 'sin destinatarios configurados' },
+        })
+        result.skipped++
+        continue
+      }
+
+      const { data: runs } = await db.from('runs')
+        .select('id, started_at, duration_sec, status, caller_number')
+        .eq('agent_id', agent.id).gte('started_at', since)
+        .order('started_at', { ascending: false })
+
+      const digestRuns: DigestRun[] = []
+      for (const r of runs ?? []) {
+        const { data: values } = await db.from('extracted_values')
+          .select('field_key, value_text, extraction_version')
+          .eq('run_id', r.id).order('extraction_version')
+        const fields: Record<string, string> = {}
+        for (const v of values ?? []) fields[v.field_key] = v.value_text ?? ''
+        digestRuns.push({
+          runId: r.id, startedAt: r.started_at, durationSec: r.duration_sec,
+          status: r.status, callerNumber: r.caller_number, fields,
+        })
+      }
+
+      const clientName = agent.clients?.name ?? 'Cliente'
+      const email = renderDigestEmail(clientName, digestRuns)
+      await deps.sendEmail({ to: recipients, ...email })
+
+      await db.from('action_runs').insert({
+        action_id: action.id, client_id: agent.client_id, agent_id: agent.id,
+        type: 'email_digest', status: 'sent',
+        detail: { recipients, runs: digestRuns.length, since },
+      })
+      result.sent++
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      await db.from('action_runs').insert({
+        action_id: action.id, client_id: agent.client_id, agent_id: agent.id,
+        type: 'email_digest', status: 'failed', error: message,
+      })
+      await db.from('events').insert({
+        client_id: agent.client_id, agent_id: agent.id,
+        type: 'digest.failed', level: 'error', message,
       })
       result.failed++
     }

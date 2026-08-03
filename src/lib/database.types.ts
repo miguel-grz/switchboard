@@ -187,6 +187,7 @@ export type Database = {
       agent_revisions: {
         Row: {
           agent_id: string
+          config: Json
           created_at: string
           created_by: string | null
           fields: Json
@@ -198,6 +199,7 @@ export type Database = {
         }
         Insert: {
           agent_id: string
+          config?: Json
           created_at?: string
           created_by?: string | null
           fields?: Json
@@ -209,6 +211,7 @@ export type Database = {
         }
         Update: {
           agent_id?: string
+          config?: Json
           created_at?: string
           created_by?: string | null
           fields?: Json
@@ -239,6 +242,7 @@ export type Database = {
         Row: {
           channel: string | null
           client_id: string
+          config: Json
           created_at: string
           description: string | null
           extraction_version: number
@@ -254,6 +258,7 @@ export type Database = {
         Insert: {
           channel?: string | null
           client_id: string
+          config?: Json
           created_at?: string
           description?: string | null
           extraction_version?: number
@@ -269,6 +274,7 @@ export type Database = {
         Update: {
           channel?: string | null
           client_id?: string
+          config?: Json
           created_at?: string
           description?: string | null
           extraction_version?: number

@@ -247,23 +247,81 @@ export const vapiAdapter: ProviderAdapter = {
   },
 
   buildAssistantConfig(input: AssistantInput): unknown {
-    return {
+    const c = input.config ?? {}
+    const pick = <T>(key: string, fallback: T): T => (c[key] as T) ?? fallback
+
+    // Valores por defecto pensados para una línea de atención en EE. UU.
+    // Todos son sobreescribibles desde agents.config, sin desplegar nada.
+    const language = pick('language', 'en')
+
+    const assistant: Record<string, unknown> = {
       name: input.name,
+
+      // El agente habla primero: es una línea entrante, y el saludo es donde
+      // se dan los avisos de asistente automático y de grabación.
+      firstMessageMode: 'assistant-speaks-first',
+      firstMessage: pick(
+        'greeting',
+        'Thanks for calling. I\'m an automated assistant and this call is recorded. How can I help you?',
+      ),
+
       model: {
-        provider: 'openai',
-        model: 'gpt-4o',
+        provider: pick('llmProvider', 'openai'),
+        model: pick('llmModel', 'gpt-4o'),
+        // Baja a propósito: esto toma recados, no conversa con creatividad.
+        temperature: pick('temperature', 0.3),
         messages: [{ role: 'system', content: input.systemPrompt }],
       },
-      // Sin structuredDataPlan habilitado, Vapi no devuelve structuredData y
-      // la extracción llegaría vacía en cada llamada.
+
+      voice: {
+        provider: pick('voiceProvider', '11labs'),
+        voiceId: pick('voiceId', 'burt'),
+      },
+
+      transcriber: {
+        provider: pick('transcriberProvider', 'deepgram'),
+        model: pick('transcriberModel', 'nova-2'),
+        language,
+      },
+
+      // Cortes de seguridad: una llamada colgada que sigue abierta se factura.
+      silenceTimeoutSeconds: pick('silenceTimeoutSeconds', 30),
+      maxDurationSeconds: pick('maxDurationSeconds', 600),
+      endCallMessage: pick('endCallMessage', 'Thank you for calling. Goodbye.'),
+
+      // Sin esto Vapi no devuelve structuredData y la extracción llega vacía.
+      //
+      // Nota para la primera prueba real: la documentación de Vapi describe
+      // este bloque de dos formas según la versión —anidada en *Plan, y plana
+      // como structuredDataSchema/structuredDataPrompt—. Se usa la anidada,
+      // que es la del API de creación vigente. Si Vapi la rechaza, el error
+      // queda en events como agent.sync_failed y solo hay que cambiarlo aquí.
       analysisPlan: {
         structuredDataPlan: {
           enabled: true,
           schema: this.buildExtractionSchema(input.fields),
+          prompt:
+            'Extract the fields defined in the schema from this call. ' +
+            'Use the caller\'s own words for free-text fields. ' +
+            'Leave a field empty rather than guessing.',
         },
-        summaryPlan: { enabled: true },
+        summaryPlan: {
+          enabled: true,
+          prompt:
+            'Summarize in two sentences why the person called and what they need, ' +
+            'for the staff member who will call them back.',
+        },
       },
     }
+
+    // El servidor solo se declara si se sabe a dónde apuntar: en desarrollo,
+    // antes de desplegar, no hay URL pública que dar.
+    if (input.webhook?.url) {
+      assistant.server = { url: input.webhook.url, secret: input.webhook.secret }
+      assistant.serverMessages = ['end-of-call-report', 'status-update']
+    }
+
+    return assistant
   },
 }
 
