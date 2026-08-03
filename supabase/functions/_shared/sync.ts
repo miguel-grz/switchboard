@@ -9,6 +9,8 @@ export interface SyncDeps {
   http: FetchLike
   apiKey: string
   baseUrl?: string
+  /** A dónde debe llamar el proveedor al terminar una llamada. */
+  webhook?: { url: string; secret: string }
 }
 
 export interface SyncResult {
@@ -29,7 +31,7 @@ export async function syncAgent(
   deps: SyncDeps,
 ): Promise<SyncResult> {
   const { data: agent, error } = await db.from('agents')
-    .select('id, client_id, name, provider, provider_agent_id, system_prompt')
+    .select('id, client_id, name, provider, provider_agent_id, system_prompt, config')
     .eq('id', agentId).single()
   if (error || !agent) throw new Error(`Agente no encontrado: ${agentId}`)
 
@@ -39,10 +41,13 @@ export async function syncAgent(
 
   const fields = (rows ?? []) as FieldDef[]
   const adapter = getAdapter(agent.provider)
+  const agentConfig = (agent.config ?? {}) as Record<string, unknown>
   const config = adapter.buildAssistantConfig({
     name: agent.name,
     systemPrompt: agent.system_prompt,
     fields,
+    config: agentConfig,
+    webhook: deps.webhook,
   })
 
   // La base la declara el adaptador: este módulo no sabe qué proveedor es.
@@ -84,6 +89,9 @@ export async function syncAgent(
     version,
     system_prompt: agent.system_prompt,
     fields,
+    // También la config: sin ella se sabría con qué prompt corrió una llamada
+    // pero no con qué voz ni con qué idioma.
+    config: agentConfig,
     provider: agent.provider,
     provider_agent_id: providerAgentId,
   })
@@ -100,4 +108,60 @@ export async function syncAgent(
   })
 
   return { providerAgentId, version }
+}
+
+/**
+ * Ata un número ya aprovisionado en el proveedor a este agente.
+ *
+ * El número **se compra a mano** en el panel del proveedor: comprarlo por API
+ * gasta dinero real, y no es algo que deba poder disparar un despliegue por
+ * accidente. Esto solo lo enlaza, que es la parte reversible.
+ */
+export async function attachPhoneNumber(
+  db: SupabaseClient,
+  agentId: string,
+  providerPhoneNumberId: string,
+  deps: SyncDeps,
+): Promise<void> {
+  const { data: agent, error } = await db.from('agents')
+    .select('id, client_id, provider, provider_agent_id, channel')
+    .eq('id', agentId).single()
+  if (error || !agent) throw new Error(`Agente no encontrado: ${agentId}`)
+  if (!agent.provider_agent_id) {
+    throw new Error('El agente no está publicado todavía: sincronízalo antes de atar un número')
+  }
+
+  const adapter = getAdapter(agent.provider)
+  const base = deps.baseUrl ?? adapter.apiBaseUrl
+
+  const res = await deps.http(`${base}/phone-number/${providerPhoneNumberId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${deps.apiKey}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ assistantId: agent.provider_agent_id }),
+  })
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    const message = `No se pudo atar el número (${res.status}): ${detail.slice(0, 200)}`
+    await db.from('events').insert({
+      client_id: agent.client_id, agent_id: agentId,
+      type: 'agent.phone_attach_failed', level: 'error', message,
+    })
+    throw new Error(message)
+  }
+
+  const body = await res.json().catch(() => ({})) as { number?: string }
+  await db.from('agents')
+    .update({ channel: body.number ?? agent.channel, updated_at: new Date().toISOString() })
+    .eq('id', agentId)
+
+  await db.from('events').insert({
+    client_id: agent.client_id, agent_id: agentId,
+    type: 'agent.phone_attached', level: 'info',
+    message: `Número ${body.number ?? providerPhoneNumberId} atado al agente`,
+    payload: { providerPhoneNumberId },
+  })
 }

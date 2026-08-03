@@ -5,6 +5,10 @@ export interface AssistantInput {
   name: string
   systemPrompt: string
   fields: FieldDef[]
+  /** Ajustes por agente (voz, idioma, saludo…). El adaptador los traduce. */
+  config?: Record<string, unknown>
+  /** A dónde debe enviar el proveedor sus webhooks, y con qué secreto. */
+  webhook?: { url: string; secret: string }
 }
 
 export interface ProviderAdapter {

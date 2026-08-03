@@ -11,11 +11,21 @@ with c as (
   returning id
 ), a as (
   insert into public.agents (
-    client_id, module_type, name, description, provider, status, system_prompt
+    client_id, module_type, name, description, provider, status, config, system_prompt
   )
   select c.id, 'voice', 'Intake general',
     'Atiende fuera de horario, entiende el motivo de la llamada y captura los datos.',
     'vapi', 'paused',
+    -- Idioma pendiente de confirmar con Luis: el prompt está en español, pero
+    -- una agencia en Florida probablemente reciba llamadas en inglés o en
+    -- ambos. Cambiar aquí no exige desplegar nada.
+    jsonb_build_object(
+      'language', 'es',
+      'voiceProvider', '11labs',
+      'voiceId', 'burt',
+      'maxDurationSeconds', 600,
+      'silenceTimeoutSeconds', 30
+    ),
 $prompt$Contestas el teléfono de Magen Insurance fuera del horario de oficina. Eres claro, cálido y breve.
 
 Al contestar, di que eres un asistente automático de Magen Insurance y que la llamada se graba.
